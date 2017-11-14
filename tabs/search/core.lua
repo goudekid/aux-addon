@@ -1,12 +1,11 @@
 module 'aux.tabs.search'
 
+include 'T'
 include 'aux'
-
-local T = require 'T'
 
 local info = require 'aux.util.info'
 
-local tab = TAB 'Search'
+TAB 'Search'
 
 StaticPopupDialogs.AUX_SEARCH_TABLE_FULL = {
     text = 'Table full!\nFurther results from this search will still be processed but no longer displayed in the table.',
@@ -20,28 +19,28 @@ RESULTS = 1
 SAVED = 2
 FILTER = 3
 
-function handle.LOAD()
-	set_subtab(SAVED)
+function LOAD()
+	subtab = SAVED
 end
 
-function tab.OPEN()
+function OPEN()
     frame:Show()
     update_search_listings()
     update_filter_display()
 end
 
-function tab.CLOSE()
-    get_current_search().table:SetSelectedRecord()
+function CLOSE()
+    current_search.table:SetSelectedRecord()
     frame:Hide()
 end
 
-function tab.CLICK_LINK(item_info)
-	set_filter(strlower(item_info.name) .. '/exact')
+function CLICK_LINK(item_info)
+	filter = strlower(item_info.name) .. '/exact'
 	execute(nil, false)
 end
 
-function tab.USE_ITEM(item_info)
-	set_filter(strlower(info.item(item_info.item_id).name) .. '/exact')
+function USE_ITEM(item_info)
+	filter = strlower(info.item(item_info.item_id).name) .. '/exact'
 	execute(nil, false)
 end
 
@@ -79,7 +78,7 @@ function add_filter(filter_string)
         old_filter_string = old_filter_string .. ';'
     end
 
-    set_filter(old_filter_string .. filter_string)
+    filter = old_filter_string .. filter_string
 end
 
 function blizzard_page_index(str)

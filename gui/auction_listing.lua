@@ -1,15 +1,16 @@
 module 'aux.gui.auction_listing'
 
+include 'T'
 include 'aux'
-
-local T = require 'T'
 
 local info = require 'aux.util.info'
 local sort_util = require 'aux.util.sort'
 local money = require 'aux.util.money'
 local history = require 'aux.core.history'
 local gui = require 'aux.gui'
+local search_tab = require 'aux.tabs.search'
 local tooltip = require 'aux.core.tooltip'
+local cache = require 'aux.core.cache'
 
 local price_per_unit = false
 
@@ -139,7 +140,7 @@ M.search_columns = {
         width = .13,
         align = 'CENTER',
         fill = function(cell, record)
-            cell.text:SetText(info.is_player(record.owner) and (color.yellow(record.owner)) or (record.owner or '?'))
+            cell.text:SetText(cache.is_player(record.owner) and (color.yellow(record.owner)) or (record.owner or '?'))
         end,
         cmp = function(record_a, record_b, desc)
             if not record_a.owner and not record_b.owner then
@@ -225,7 +226,7 @@ M.search_columns = {
         align = 'CENTER',
         fill = function(cell, record)
             local pct, bidPct = record_percentage(record)
-            cell.text:SetText((pct or bidPct) and gui.percentage_historical(pct or bidPct, not pct) or '?')
+            cell.text:SetText((pct or bidPct) and percentage_historical(pct or bidPct, not pct) or '?')
         end,
         cmp = function(record_a, record_b, desc)
             local pct_a = record_percentage(record_a) or (desc and -huge or huge)
@@ -428,7 +429,7 @@ M.bids_columns = {
         width = .13,
         align = 'CENTER',
         fill = function(cell, record)
-            cell.text:SetText(info.is_player(record.owner) and (color.yellow(record.owner)) or (record.owner or '?'))
+            cell.text:SetText(cache.is_player(record.owner) and (color.yellow(record.owner)) or (record.owner or '?'))
         end,
         cmp = function(record_a, record_b, desc)
             if not record_a.owner and not record_b.owner then
@@ -521,6 +522,23 @@ function record_percentage(record)
     end
 end
 
+function M.percentage_historical(pct, bid)
+    local text = (pct > 10000 and '>10000' or pct) .. '%'
+    if bid then
+        return color.gray(text)
+    elseif pct < 50 then
+        return color.blue(text)
+    elseif pct < 80 then
+        return color.green(text)
+    elseif pct < 110 then
+        return color.yellow(text)
+    elseif pct < 135 then
+        return color.orange(text)
+    else
+        return color.red(text)
+    end
+end
+
 function M.time_left(code)
     return TIME_LEFT_STRINGS[code]
 end
@@ -607,12 +625,17 @@ local methods = {
             DressUpItemLink(this.record.link)
         elseif IsShiftKeyDown() and ChatFrameEditBox:IsVisible() then
             ChatFrameEditBox:Insert(this.record.link)
+        elseif not modified and button == 'RightButton' then -- TODO not when alt (how?)
+            tab = 1
+            search_tab.filter = strlower(info.item(this.record.item_id).name) .. '/exact'
+            search_tab.execute(nil, false)
         else
             local selection = this.rt:GetSelection()
             if not selection or selection.record ~= this.record then
                 this.rt:SetSelectedRecord(this.record)
+            elseif this.rt.handlers.OnClick then
+                this.rt.handlers.OnClick(this, button)
             end
-	        do (this.rt.handlers.OnClick or nop)(this, button) end
         end
     end,
 
@@ -629,16 +652,14 @@ local methods = {
     end,
 
     UpdateRowInfo = function(self)
-	    for _, v in ipairs(self.rowInfo) do
-		    if type(v) == 'table' then
-			    for _, child in v.children do
-				    T.release(child)
-			    end
-			    T.release(v.children)
-			    T.release(v)
+	    for _, info in self.rowInfo do
+		    if type(info) == 'table' then
+			    for _, child in info.children do release(child) end
+			    release(info.children)
+			    release(info)
 		    end
 	    end
-        T.wipe(self.rowInfo)
+        wipe(self.rowInfo)
         self.rowInfo.numDisplayRows = 0
         self.isSorted = nil
         self:SetSelectedRecord(nil, true)
@@ -657,27 +678,28 @@ local methods = {
                 self.rowInfo[getn(self.rowInfo)].children[getn(self.rowInfo[getn(self.rowInfo)].children)].count = self.rowInfo[getn(self.rowInfo)].children[getn(self.rowInfo[getn(self.rowInfo)].children)].count + 1
             elseif not single_item and prevRecord and record.item_key == prevRecord.item_key then
                 -- it's the same base item as the previous row so insert a new auction
-                tinsert(self.rowInfo[getn(self.rowInfo)].children, T.map('count', 1, 'record', record))
+                tinsert(self.rowInfo[getn(self.rowInfo)].children, O('count', 1, 'record', record))
                 if self.expanded[self.rowInfo[getn(self.rowInfo)].expandKey] then
                     self.rowInfo.numDisplayRows = self.rowInfo.numDisplayRows + 1
                 end
             else
                 -- it's a different base item from the previous row
-                tinsert(self.rowInfo, T.map('item_key', record.item_key, 'expandKey', record.item_key, 'children', T.list(T.map('count', 1, 'record', record))))
+                tinsert(self.rowInfo, O('item_key', record.item_key, 'expandKey', record.item_key, 'children', A(O('count', 1, 'record', record))))
                 self.rowInfo.numDisplayRows = self.rowInfo.numDisplayRows + 1
             end
         end
 
-	    for _, v in ipairs(self.rowInfo) do
+	    for i = 1, getn(self.rowInfo) do
+		    local info = self.rowInfo[i]
             local totalAuctions, totalPlayerAuctions = 0, 0
-            for _, childInfo in v.children do
+            for _, childInfo in info.children do
                 totalAuctions = totalAuctions + childInfo.count
-                if info.is_player(childInfo.record.owner) then
+                if cache.is_player(childInfo.record.owner) then
                     totalPlayerAuctions = totalPlayerAuctions + childInfo.count
                 end
             end
-            v.totalAuctions = totalAuctions
-            v.totalPlayerAuctions = totalPlayerAuctions
+            info.totalAuctions = totalAuctions
+            info.totalPlayerAuctions = totalPlayerAuctions
 	    end
     end,
 
@@ -737,25 +759,25 @@ local methods = {
                 return tostring(a) < tostring(b)
             end
 
-            for _, v in ipairs(self.rowInfo) do
-                sort(v.children, sort_helper)
+            for i = 1, getn(self.rowInfo) do
+                sort(self.rowInfo[i].children, sort_helper)
             end
             sort(self.rowInfo, sort_helper)
             self.isSorted = true
         end
 
-	    for _, row in self.rows do
-		    row:Hide()
-	    end
+	    for _, row in self.rows do row:Hide() end
         local rowIndex = 1 - FauxScrollFrame_GetOffset(self.scrollFrame)
-        for _, v in ipairs(self.rowInfo) do
-            if self.expanded[v.expandKey] then
-                for j, childInfo in ipairs(v.children) do
-                    self:SetRowInfo(rowIndex, childInfo.record, childInfo.count, 0, j > 1, false, v.expandKey)
+        for i = 1, getn(self.rowInfo) do
+	        local info = self.rowInfo[i]
+            if self.expanded[info.expandKey] then
+                for j = 1, getn(info.children) do
+	                local childInfo = info.children[j]
+                    self:SetRowInfo(rowIndex, childInfo.record, childInfo.count, 0, j > 1, false, info.expandKey)
                     rowIndex = rowIndex + 1
                 end
             else
-                self:SetRowInfo(rowIndex, v.children[1].record, v.totalAuctions, getn(v.children) > 1 and v.totalPlayerAuctions or 0, false, getn(v.children) > 1, v.expandKey)
+                self:SetRowInfo(rowIndex, info.children[1].record, info.totalAuctions, getn(info.children) > 1 and info.totalPlayerAuctions or 0, false, getn(info.children) > 1, info.expandKey)
                 rowIndex = rowIndex + 1
             end
         end
@@ -800,7 +822,7 @@ local methods = {
     end,
 
     Reset = function(self)
-        T.wipe(self.expanded)
+        wipe(self.expanded)
         self:UpdateRowInfo()
         self:UpdateRows()
         self:SetSelectedRecord()
@@ -853,16 +875,16 @@ local methods = {
         end
     end,
 
-    SetSort = T.vararg-function(arg)
-	    local self = tremove(arg, 1)
-        for _, v in ipairs(arg) do
+    SetSort = function(self, ...)
+	    temp(arg)
+        for k = 1, arg.n do
             for i, sort in self.sorts do
-                if sort.index == abs(v) then
+                if sort.index == abs(arg[k]) then
                     tremove(self.sorts, i)
                     break
                 end
             end
-            tinsert(self.sorts, 1, {index=abs(v), descending=v < 0})
+            tinsert(self.sorts, 1, {index=abs(arg[k]), descending=arg[k] < 0})
         end
 
         self.isSorted = nil
@@ -876,8 +898,8 @@ local methods = {
     GetSelection = function(self)
         if not self.selected then return end
         local selectedData
-        for _, v in ipairs(self.rowInfo) do
-            for _, childInfo in v.children do
+        for i = 1, getn(self.rowInfo) do
+            for _, childInfo in self.rowInfo[i].children do
                 if childInfo.record.search_signature == self.selected.search_signature then
                     selectedData = childInfo
                     break
@@ -915,7 +937,7 @@ function M.new(parent, rows, columns)
     contentFrame:SetPoint('BOTTOMRIGHT', 0, 0)
     rt.contentFrame = contentFrame
 
-    local scrollFrame = CreateFrame('ScrollFrame', gui.unique_name(), rt, 'FauxScrollFrameTemplate')
+    local scrollFrame = CreateFrame('ScrollFrame', gui.unique_name, rt, 'FauxScrollFrameTemplate')
     scrollFrame:SetScript('OnVerticalScroll', function()
 	    FauxScrollFrame_OnVerticalScroll(rt.ROW_HEIGHT, function() rt:UpdateRows() end)
     end)
@@ -937,7 +959,8 @@ function M.new(parent, rows, columns)
     _G[scrollBar:GetName() .. 'ScrollDownButton']:Hide()
 
     rt.headCells = {}
-    for i, column in ipairs(rt.columns) do
+    for i = 1, getn(rt.columns) do
+	    local column = rt.columns[i]
         local cell = CreateFrame('Button', nil, rt.contentFrame)
         cell:SetHeight(HEAD_HEIGHT)
         if i == 1 then
@@ -1001,12 +1024,12 @@ function M.new(parent, rows, columns)
         row.highlight = highlight
 
         row.cells = {}
-        for j, column in ipairs(rt.columns) do
+        for j = 1, getn(rt.columns) do
             local cell = CreateFrame('Frame', nil, row)
             local text = cell:CreateFontString()
             cell.text = text
             text:SetFont(gui.font, min(14, rt.ROW_HEIGHT))
-            text:SetJustifyH(column.align or 'LEFT')
+            text:SetJustifyH(rt.columns[j].align or 'LEFT')
             text:SetJustifyV('CENTER')
             text:SetPoint('TOPLEFT', 1, -1)
             text:SetPoint('BOTTOMRIGHT', -1, 1)
@@ -1026,8 +1049,8 @@ function M.new(parent, rows, columns)
                 tex:SetTexture(.3, .3, .3, .2)
             end
 
-            if column.init then
-                column.init(rt, cell)
+            if rt.columns[j].init then
+                rt.columns[j].init(rt, cell)
             end
 
             tinsert(row.cells, cell)

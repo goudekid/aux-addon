@@ -1,5 +1,6 @@
 module 'aux.util.completion'
 
+include 'T'
 include 'aux'
 
 local filter_util = require 'aux.util.filter'
@@ -17,9 +18,9 @@ function M:complete_filter()
 	local start_index, _, current_modifier = strfind(filter_string, '([^/;]*)$')
 	current_modifier = current_modifier or ''
 
-	for _, suggestion in ipairs(suggestions) do
-		if strsub(strupper(suggestion), 1, strlen(current_modifier)) == strupper(current_modifier) then
-			this:SetText(strlower(strsub(filter_string, 1, start_index - 1) ..  suggestion))
+	for i = 1, getn(suggestions) do
+		if strsub(strupper(suggestions[i]), 1, strlen(current_modifier)) == strupper(current_modifier) then
+			this:SetText(strlower(strsub(filter_string, 1, start_index - 1) ..  suggestions[i]))
 			this:HighlightText(strlen(filter_string), -1)
 			return
 		end

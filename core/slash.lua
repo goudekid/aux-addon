@@ -2,9 +2,11 @@ module 'aux.core.slash'
 
 include 'aux'
 
-local info = require 'aux.util.info'
+local cache = require 'aux.core.cache'
+local history = require 'aux.core.history'
+local money = require 'aux.util.money'
 
-function handle.LOAD2()
+function LOAD2()
 	tooltip_settings = character_data'tooltip'
 end
 
@@ -53,7 +55,9 @@ function SlashCmdList.AUX(command)
 	    _G.aux_auctionable_items = {}
         print('Item cache cleared.')
     elseif arguments[1] == 'populate' and arguments[2] == 'wdb' then
-	    info.populate_wdb()
+	    cache.populate_wdb()
+	elseif arguments[1] == 'test' then
+		print(money.to_string2(history.value(10940 .. ':' .. 0)))
 	else
 		print('Usage:')
 		print('- scale [' .. color.blue(aux_scale) .. ']')

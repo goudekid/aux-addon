@@ -1,4 +1,5 @@
-if module 'T' then return end
+if defined 'T' then return end
+module 'T'
 
 local next, getn, setn, tremove, setmetatable = next, getn, table.setn, tremove, setmetatable
 
@@ -7,7 +8,7 @@ local pool, pool_size, overflow_pool, auto_release = {}, 0, setmetatable({}, {__
 
 function wipe(t)
 	setmetatable(t, nil)
-	for k in t do
+	for k, v in t do
 		t[k] = nil
 	end
 	t.reset, t.reset = nil, 1
@@ -16,9 +17,7 @@ end
 M.wipe = wipe
 
 CreateFrame'Frame':SetScript('OnUpdate', function()
-	for t in auto_release do
-		release(t)
-	end
+	for t in auto_release do release(t) end
 	wipe(auto_release)
 end)
 
@@ -49,33 +48,25 @@ end
 M.release = release
 
 do
-	local function f(_, v)
-		if v then
-			auto_release[v] = true
-			return v
-		end
-	end
+	local function f(_, v) if v then auto_release[v] = true; return v end end
 	M.temp = setmetatable({}, {__metatable=false, __newindex=nop, __call=f, __sub=f})
 end
 do
-	local function f(_, v)
-		if v then
-			auto_release[v] = nil
-			return v
-		end
-	end
+	local function f(_, v) if v then auto_release[v] = nil; return v end end
 	M.static = setmetatable({}, {__metatable=false, __newindex=nop, __call=f, __sub=f})
 end
 
+M.get_T = acquire
+
 do
-	local function unpack(t)
+	local function ret(t)
 		if getn(t) > 0 then
-			return tremove(t, 1), unpack(t)
+			return tremove(t, 1), ret(t)
 		else
 			release(t)
 		end
 	end
-	M.unpack = unpack
+	M.ret = ret
 end
 
 M.empty = setmetatable({}, {__metatable=false, __newindex=nop})
@@ -123,24 +114,22 @@ do
 	end
 	M.vararg = setmetatable({}, {
 		__metatable = false,
-		__sub = function(_, v)
-			return vararg(v)
-		end,
+		__sub = function(_, v) return vararg(v) end,
 	})
 end
 
-M.list = vararg(function(arg)
+M.A = vararg(function(arg)
 	auto_release[arg] = nil
 	return arg
 end)
-M.set = vararg(function(arg)
+M.S = vararg(function(arg)
 	local t = acquire()
 	for _, v in arg do
 		t[v] = true
 	end
 	return t
 end)
-M.map = vararg(function(arg)
+M.O = vararg(function(arg)
 	local t = acquire()
 	for i = 1, getn(arg), 2 do
 		t[arg[i]] = arg[i + 1]

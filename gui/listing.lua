@@ -1,8 +1,7 @@
 module 'aux.gui.listing'
 
+include 'T'
 include 'aux'
-
-local T = require 'T'
 
 local gui = require 'aux.gui'
 
@@ -65,7 +64,7 @@ local methods = {
 		    self.headHeight = 0
 	    end
 
-	    if getn(self.rowData or T.empty) > self.numRows then
+	    if getn(self.rowData or empty) > self.numRows then
 		    self.contentFrame:SetPoint('BOTTOMRIGHT', -15, 0)
 	    else
 		    self.contentFrame:SetPoint('BOTTOMRIGHT', 0, 0)
@@ -120,23 +119,22 @@ local methods = {
         self.offset = offset
 
         for i = 1, self.numRows do
-	        local row = self.rows[i]
-            row.data = nil
+            self.rows[i].data = nil
             if i > getn(self.rowData) then
-	            row:Hide()
+                self.rows[i]:Hide()
             else
-	            row:Show()
+                self.rows[i]:Show()
                 local data = self.rowData[i + offset]
                 if not data then break end
-	            row.data = data
+                self.rows[i].data = data
 
-                if row.mouseover or self.selected and self.selected(data) then
-	                row.highlight:Show()
+                if self.rows[i].mouseover or self.selected and self.selected(data) then
+                    self.rows[i].highlight:Show()
                 else
-	                row.highlight:Hide()
+                    self.rows[i].highlight:Hide()
                 end
 
-                for j, col in row.cols do
+                for j, col in self.rows[i].cols do
                     if self.colInfo[j] then
                         local colData = data.cols[j]
                         if type(colData.value) == 'function' then
@@ -151,10 +149,10 @@ local methods = {
     end,
 
     SetData = function(self, rowData)
-	    for _, row in self.rowData or T.empty do
-		    for _, col in row.cols do T.release(col) end
-		    T.release(row.cols)
-		    T.release(row)
+	    for _, row in self.rowData or empty do
+		    for _, col in row.cols do release(col) end
+		    release(row.cols)
+		    release(row)
 	    end
         self.rowData = rowData
         self.updateSort = true
@@ -236,7 +234,7 @@ local methods = {
         row.highlight = highlight
         row.st = self
 
-        row.cols = T.acquire()
+        row.cols = T
         self.rows[rowNum] = row
         for _ = 1, getn(self.colInfo) do
             self:AddCell(rowNum)
@@ -259,7 +257,7 @@ local methods = {
 }
 
 function M.new(parent)
-    local st = CreateFrame('Frame', gui.unique_name(), parent)
+    local st = CreateFrame('Frame', gui.unique_name, parent)
     st:SetAllPoints()
 
     st.numRows = max(floor((parent:GetHeight() - HEAD_HEIGHT - HEAD_SPACE) / ROW_HEIGHT), 0)
@@ -293,9 +291,9 @@ function M.new(parent)
         st[name] = func
     end
     
-    st.headCols = T.acquire()
-    st.rows = T.acquire()
-    st.handlers = T.acquire()
+    st.headCols = T
+    st.rows = T
+    st.handlers = T
     st.colInfo = DEFAULT_COL_INFO
 
     return st

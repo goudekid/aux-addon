@@ -2,9 +2,9 @@ module 'aux'
 
 local gui = require 'aux.gui'
 
-function handle.LOAD()
-	for _, v in ipairs(tab_info) do
-		tabs:create_tab(v.name)
+function LOAD()
+	for i = 1, getn(tab_info) do
+		tabs:create_tab(tab_info[i].name)
 	end
 end
 
@@ -18,7 +18,9 @@ do
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:SetClampedToScreen(true)
-	frame:CreateTitleRegion():SetAllPoints()
+	frame:RegisterForDrag('LeftButton')
+	frame:SetScript('OnDragStart', function() this:StartMoving() end)
+	frame:SetScript('OnDragStop', function() this:StopMovingOrSizing() end)
 	frame:SetScript('OnShow', function() PlaySound('AuctionWindowOpen') end)
 	frame:SetScript('OnHide', function() PlaySound('AuctionWindowClose'); CloseAuctionHouse() end)
 	frame.content = CreateFrame('Frame', nil, frame)

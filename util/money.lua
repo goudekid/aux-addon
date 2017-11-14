@@ -1,8 +1,7 @@
 module 'aux.util.money'
 
+include 'T'
 include 'aux'
-
-local T = require 'T'
 
 M.GOLD_TEXT = '|cffffd70ag|r'
 M.SILVER_TEXT = '|cffc7c7cfs|r'
@@ -35,7 +34,7 @@ function M.to_string2(money, exact, color)
 	local NONE = '|cffa0a0a0' .. TEXT_NONE .. FONT_COLOR_CODE_CLOSE
 
 	if not exact and money >= COPPER_PER_GOLD then
-		money = round(money / COPPER_PER_SILVER) * COPPER_PER_SILVER
+		money = (round(money / COPPER_PER_SILVER) * COPPER_PER_SILVER) or 0
 	end
 	local g, s, c = to_gsc(money)
 
@@ -73,7 +72,7 @@ function M.to_string(money, pad, trim, color, no_color)
 
 	local text
 	if trim then
-		local parts = T.temp-T.acquire()
+		local parts = temp-T
 		if gold > 0 then
 			tinsert(parts, format_number(gold, false, color) .. gold_text)
 		end

@@ -1,8 +1,7 @@
 module 'aux.tabs.post'
 
+include 'T'
 include 'aux'
-
-local T = require 'T'
 
 local info = require 'aux.util.info'
 local sort_util = require 'aux.util.sort'
@@ -12,32 +11,28 @@ local scan_util = require 'aux.util.scan'
 local post = require 'aux.core.post'
 local scan = require 'aux.core.scan'
 local history = require 'aux.core.history'
+local cache = require 'aux.core.cache'
 local item_listing = require 'aux.gui.item_listing'
 local al = require 'aux.gui.auction_listing'
-local gui = require 'aux.gui'
 
-local tab = TAB 'Post'
+TAB 'Post'
 
 local DURATION_4, DURATION_8, DURATION_24 = 120, 480, 1440
 local settings_schema = {'tuple', '#', {duration='number'}, {start_price='number'}, {buyout_price='number'}, {hidden='boolean'}}
 
 local scan_id, inventory_records, bid_records, buyout_records = 0, {}, {}, {}
 
-refresh = true
-
-selected_item = nil
-
 function get_default_settings()
-	return T.map('duration', DURATION_8, 'start_price', 0, 'buyout_price', 0, 'hidden', false)
+	return O('duration', DURATION_8, 'start_price', 0, 'buyout_price', 0, 'hidden', false)
 end
 
-function handle.LOAD2()
+function LOAD2()
 	data = faction_data'post'
 end
 
 function read_settings(item_key)
 	item_key = item_key or selected_item.key
-	return data[item_key] and persistence.read(settings_schema, data[item_key]) or get_default_settings()
+	return data[item_key] and persistence.read(settings_schema, data[item_key]) or default_settings
 end
 function write_settings(settings, item_key)
 	item_key = item_key or selected_item.key
@@ -66,18 +61,30 @@ function refresh_button_click()
 	refresh = true
 end
 
-function tab.OPEN()
+do
+	local item
+	function get_selected_item() return item end
+	function set_selected_item(v) item = v end
+end
+
+do
+	local c = 0
+	function get_refresh() return c end
+	function set_refresh(v) c = v end
+end
+
+function OPEN()
     frame:Show()
     update_inventory_records()
     refresh = true
 end
 
-function tab.CLOSE()
+function CLOSE()
     selected_item = nil
     frame:Hide()
 end
 
-function tab.USE_ITEM(item_info)
+function USE_ITEM(item_info)
 	select_item(item_info.item_key)
 end
 
@@ -111,34 +118,35 @@ function update_inventory_listing()
 end
 
 function update_auction_listing(listing, records, reference)
-	local rows = T.acquire()
+	local rows = T
 	if selected_item then
 		local historical_value = history.value(selected_item.key)
 		local stack_size = stack_size_slider:GetValue()
-		for _, record in records[selected_item.key] or T.empty do
+		for i = 1, getn(records[selected_item.key] or empty) do
+			local record = records[selected_item.key][i]
 			local price_color = undercut(record, stack_size_slider:GetValue(), listing == 'bid') < reference and color.red
 			local price = record.unit_price * (listing == 'bid' and record.stack_size / stack_size_slider:GetValue() or 1)
-			tinsert(rows, T.map(
-				'cols', T.list(
-				T.map('value', record.own and color.green(record.count) or record.count),
-				T.map('value', al.time_left(record.duration)),
-				T.map('value', record.stack_size == stack_size and color.green(record.stack_size) or record.stack_size),
-				T.map('value', money.to_string(price, true, nil, price_color)),
-				T.map('value', historical_value and gui.percentage_historical(round(price / historical_value * 100)) or '---')
+			tinsert(rows, O(
+				'cols', A(
+				O('value', record.own and color.green(record.count) or record.count),
+				O('value', al.time_left(record.duration)),
+				O('value', record.stack_size == stack_size and color.green(record.stack_size) or record.stack_size),
+				O('value', money.to_string(price, true, nil, price_color)),
+				O('value', historical_value and al.percentage_historical(round(price / historical_value * 100)) or '---')
 			),
 				'record', record
 			))
 		end
 		if historical_value then
-			tinsert(rows, T.map(
-				'cols', T.list(
-				T.map('value', '---'),
-				T.map('value', '---'),
-				T.map('value', '---'),
-				T.map('value', money.to_string(historical_value, true, nil, color.green)),
-				T.map('value', historical_value and gui.percentage_historical(100) or '---')
+			tinsert(rows, O(
+				'cols', A(
+				O('value', '---'),
+				O('value', '---'),
+				O('value', '---'),
+				O('value', money.to_string(historical_value, true, nil, color.green)),
+				O('value', historical_value and al.percentage_historical(100) or '---')
 			),
-				'record', T.map('historical_value', true, 'stack_size', stack_size, 'unit_price', historical_value, 'own', true)
+				'record', O('historical_value', true, 'stack_size', stack_size, 'unit_price', historical_value, 'own', true)
 			))
 		end
 		sort(rows, function(a, b)
@@ -168,8 +176,8 @@ function update_auction_listing(listing, records, reference)
 end
 
 function update_auction_listings()
-	update_auction_listing('bid', bid_records, get_unit_start_price())
-	update_auction_listing('buyout', buyout_records, get_unit_buyout_price())
+	update_auction_listing('bid', bid_records, unit_start_price)
+	update_auction_listing('buyout', buyout_records, unit_buyout_price)
 end
 
 function M.select_item(item_key)
@@ -184,23 +192,23 @@ end
 function price_update()
     if selected_item then
         local historical_value = history.value(selected_item.key)
-        if get_bid_selection() or get_buyout_selection() then
-	        set_unit_start_price(undercut(get_bid_selection() or get_buyout_selection(), stack_size_slider:GetValue(), get_bid_selection()))
-	        unit_start_price_input:SetText(money.to_string(get_unit_start_price(), true, nil, nil, true))
+        if bid_selection or buyout_selection then
+	        unit_start_price = undercut(bid_selection or buyout_selection, stack_size_slider:GetValue(), bid_selection)
+	        unit_start_price_input:SetText(money.to_string(unit_start_price, true, nil, nil, true))
         end
-        if get_buyout_selection() then
-	        set_unit_buyout_price(undercut(get_buyout_selection(), stack_size_slider:GetValue()))
-	        unit_buyout_price_input:SetText(money.to_string(get_unit_buyout_price(), true, nil, nil, true))
+        if buyout_selection then
+	        unit_buyout_price = undercut(buyout_selection, stack_size_slider:GetValue())
+	        unit_buyout_price_input:SetText(money.to_string(unit_buyout_price, true, nil, nil, true))
         end
-        start_price_percentage:SetText(historical_value and gui.percentage_historical(round(get_unit_start_price() / historical_value * 100)) or '---')
-        buyout_price_percentage:SetText(historical_value and gui.percentage_historical(round(get_unit_buyout_price() / historical_value * 100)) or '---')
+        start_price_percentage:SetText(historical_value and al.percentage_historical(round(unit_start_price / historical_value * 100)) or '---')
+        buyout_price_percentage:SetText(historical_value and al.percentage_historical(round(unit_buyout_price / historical_value * 100)) or '---')
     end
 end
 
 function post_auctions()
 	if selected_item then
-        local unit_start_price = get_unit_start_price()
-        local unit_buyout_price = get_unit_buyout_price()
+        local unit_start_price = unit_start_price
+        local unit_buyout_price = unit_buyout_price
         local stack_size = stack_size_slider:GetValue()
         local stack_count
         stack_count = stack_count_slider:GetValue()
@@ -251,11 +259,11 @@ function validate_parameters()
         post_button:Disable()
         return
     end
-    if get_unit_buyout_price() > 0 and get_unit_start_price() > get_unit_buyout_price() then
+    if unit_buyout_price > 0 and unit_start_price > unit_buyout_price then
         post_button:Disable()
         return
     end
-    if get_unit_start_price() == 0 then
+    if unit_start_price == 0 then
         post_button:Disable()
         return
     end
@@ -311,7 +319,7 @@ function update_item_configuration()
             local duration_factor = UIDropDownMenu_GetSelectedValue(duration_dropdown) / 120
             local stack_size, stack_count = selected_item.max_charges and 1 or stack_size_slider:GetValue(), stack_count_slider:GetValue()
             local amount = floor(selected_item.unit_vendor_price * deposit_factor * stack_size) * stack_count * duration_factor
-            deposit:SetText('Deposit: ' .. money.to_string(amount, nil, nil, color.text.enabled))
+            deposit:SetText('Deposit: ' .. money.to_string(amount, nil, nil, color.text.enabled) .. '  Profit after deposit: ' .. money.to_string((unit_buyout_price * stack_size * stack_count) - amount, nil, nil, color.text.enabled) )
         end
 
         refresh_button:Enable()
@@ -338,15 +346,15 @@ function quantity_update(maximize_count)
 end
 
 function unit_vendor_price(item_key)
-    for slot in info.inventory() do
-	    T.temp(slot)
-        local item_info = T.temp-info.container_item(unpack(slot))
+    for slot in info.inventory do
+	    temp(slot)
+        local item_info = temp-info.container_item(unpack(slot))
         if item_info and item_info.item_key == item_key then
             if info.auctionable(item_info.tooltip, nil, true) and not item_info.lootable then
                 ClearCursor()
                 PickupContainerItem(unpack(slot))
                 ClickAuctionSellItemButton()
-                local auction_sell_item = T.temp-info.auction_sell_item()
+                local auction_sell_item = temp-info.auction_sell_item()
                 ClearCursor()
                 ClickAuctionSellItemButton()
                 ClearCursor()
@@ -404,20 +412,20 @@ function update_item(item)
 end
 
 function update_inventory_records()
-    local auctionable_map = T.temp-T.acquire()
-    for slot in info.inventory() do
-	    T.temp(slot)
-	    local item_info = T.temp-info.container_item(unpack(slot))
+    local auctionable_map = temp-T
+    for slot in info.inventory do
+	    temp(slot)
+	    local item_info = temp-info.container_item(unpack(slot))
         if item_info then
             local charge_class = item_info.charges or 0
             if info.auctionable(item_info.tooltip, nil, true) and not item_info.lootable then
                 if not auctionable_map[item_info.item_key] then
-                    local availability = T.acquire()
+                    local availability = T
                     for i = 0, 10 do
                         availability[i] = 0
                     end
                     availability[charge_class] = item_info.count
-                    auctionable_map[item_info.item_key] = T.map(
+                    auctionable_map[item_info.item_key] = O(
 	                    'item_id', item_info.item_id,
 	                    'suffix_id', item_info.suffix_id,
 	                    'key', item_info.item_key,
@@ -438,7 +446,7 @@ function update_inventory_records()
             end
         end
     end
-    T.release(inventory_records)
+    release(inventory_records)
     inventory_records = values(auctionable_map)
     refresh = true
 end
@@ -446,8 +454,7 @@ end
 function refresh_entries()
 	if selected_item then
         local item_key = selected_item.key
-		set_bid_selection()
-        set_buyout_selection()
+		bid_selection, buyout_selection = nil, nil
         bid_records[item_key], buyout_records[item_key] = nil, nil
         local query = scan_util.item_query(selected_item.item_id)
         status_bar:update_status(0, 0)
@@ -456,7 +463,7 @@ function refresh_entries()
 		scan_id = scan.start{
             type = 'list',
             ignore_owner = true,
-			queries = T.list(query),
+			queries = A(query),
 			on_page_loaded = function(page, total_pages)
                 status_bar:update_status(page / total_pages, 0) -- TODO
                 status_bar:set_text(format('Scanning Page %d / %d', page, total_pages))
@@ -479,8 +486,8 @@ function refresh_entries()
                 status_bar:set_text('Scan aborted')
 			end,
 			on_complete = function()
-				bid_records[item_key] = bid_records[item_key] or T.acquire()
-				buyout_records[item_key] = buyout_records[item_key] or T.acquire()
+				bid_records[item_key] = bid_records[item_key] or T
+				buyout_records[item_key] = buyout_records[item_key] or T
                 refresh = true
                 status_bar:update_status(1, 1)
                 status_bar:set_text('Scan complete')
@@ -490,31 +497,31 @@ function refresh_entries()
 end
 
 function record_auction(key, aux_quantity, unit_blizzard_bid, unit_buyout_price, duration, owner)
-    bid_records[key] = bid_records[key] or T.acquire()
+    bid_records[key] = bid_records[key] or T
     do
 	    local entry
 	    for _, record in bid_records[key] do
-	        if unit_blizzard_bid == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and info.is_player(owner) == record.own then
+	        if unit_blizzard_bid == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and cache.is_player(owner) == record.own then
 	            entry = record
 	        end
 	    end
 	    if not entry then
-	        entry = T.map('stack_size', aux_quantity, 'unit_price', unit_blizzard_bid, 'duration', duration, 'own', info.is_player(owner), 'count', 0)
+	        entry = O('stack_size', aux_quantity, 'unit_price', unit_blizzard_bid, 'duration', duration, 'own', cache.is_player(owner), 'count', 0)
 	        tinsert(bid_records[key], entry)
 	    end
 	    entry.count = entry.count + 1
     end
-    buyout_records[key] = buyout_records[key] or T.acquire()
+    buyout_records[key] = buyout_records[key] or T
     if unit_buyout_price == 0 then return end
     do
 	    local entry
 	    for _, record in buyout_records[key] do
-		    if unit_buyout_price == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and info.is_player(owner) == record.own then
+		    if unit_buyout_price == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and cache.is_player(owner) == record.own then
 			    entry = record
 		    end
 	    end
 	    if not entry then
-		    entry = T.map('stack_size', aux_quantity, 'unit_price', unit_buyout_price, 'duration', duration, 'own', info.is_player(owner), 'count', 0)
+		    entry = O('stack_size', aux_quantity, 'unit_price', unit_buyout_price, 'duration', duration, 'own', cache.is_player(owner), 'count', 0)
 		    tinsert(buyout_records[key], entry)
 	    end
 	    entry.count = entry.count + 1

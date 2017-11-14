@@ -1,33 +1,31 @@
 module 'aux.tabs.search'
 
-local T = require 'T'
-
 local filter_util = require 'aux.util.filter'
 local gui = require 'aux.gui'
 
-function handle.LOAD2()
+function LOAD2()
 	recent_searches, favorite_searches = realm_data'recent_searches', realm_data'favorite_searches'
 end
 
 function update_search_listings()
-	local favorite_search_rows = T.acquire()
+	local favorite_search_rows = T
 	for i = 1, getn(favorite_searches) do
 		local search = favorite_searches[i]
 		local name = strsub(search.prettified, 1, 250)
-		tinsert(favorite_search_rows, T.map(
-			'cols', T.list(T.map('value', search.auto_buy and color.red'X' or ''), T.map('value', name)),
+		tinsert(favorite_search_rows, O(
+			'cols', A(O('value', search.auto_buy and color.red'X' or ''), O('value', name)),
 			'search', search,
 			'index', i
 		))
 	end
 	favorite_searches_listing:SetData(favorite_search_rows)
 
-	local recent_search_rows = T.acquire()
+	local recent_search_rows = T
 	for i = 1, getn(recent_searches) do
 		local search = recent_searches[i]
 		local name = strsub(search.prettified, 1, 250)
-		tinsert(recent_search_rows, T.map(
-			'cols', T.list(T.map('value', name)),
+		tinsert(recent_search_rows, O(
+			'cols', A(O('value', name)),
 			'search', search,
 			'index', i
 		))
@@ -36,7 +34,7 @@ function update_search_listings()
 end
 
 function new_recent_search(filter_string, prettified)
-	tinsert(recent_searches, 1, T.map(
+	tinsert(recent_searches, 1, O(
 		'filter_string', filter_string,
 		'prettified', prettified
 	))
@@ -50,11 +48,11 @@ handlers = {
 	OnClick = function(st, data, _, button)
 		if not data then return end
 		if button == 'LeftButton' and IsShiftKeyDown() then
-			set_filter(data.search.filter_string)
+			filter = data.search.filter_string
 		elseif button == 'RightButton' and IsShiftKeyDown() then
 			add_filter(data.search.filter_string)
 		elseif button == 'LeftButton' then
-			set_filter(data.search.filter_string)
+			filter = data.search.filter_string
 			execute()
 		elseif button == 'RightButton' then
 			local u = update_search_listings
@@ -85,7 +83,7 @@ handlers = {
 }
 
 function get_auto_buy_validator()
-	local validators = T.acquire()
+	local validators = T
 	for _, search in favorite_searches do
 		if search.auto_buy then
 			local queries, error = filter_util.queries(search.filter_string)
@@ -104,7 +102,7 @@ end
 function add_favorite(filter_string)
 	local queries, error = filter_util.queries(filter_string)
 	if queries then
-		tinsert(favorite_searches, 1, T.map(
+		tinsert(favorite_searches, 1, O(
 			'filter_string', filter_string,
 			'prettified', join(map(queries, function(query) return query.prettified end), ';')
 		))

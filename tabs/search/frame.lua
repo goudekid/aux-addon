@@ -1,14 +1,68 @@
 module 'aux.tabs.search'
 
-local T = require 'T'
-
-local info = require 'aux.util.info'
 local completion = require 'aux.util.completion'
 local filter_util = require 'aux.util.filter'
 local scan = require 'aux.core.scan'
 local gui = require 'aux.gui'
 local listing = require 'aux.gui.listing'
 local auction_listing = require 'aux.gui.auction_listing'
+
+
+
+-- -- Make a local variable that tells us whether the sound was played previously during this (minute == 0) occurrence
+-- local firedLast = false
+-- CreateFrame("Frame"):SetScript("OnUpdate",function(self,elapsed)
+    -- -- increment a member on the frame, initializing it to zero if it has no value
+    -- self.elapsed = (self.elapsed or 0)+elapsed
+    -- -- if 2 seconds passed since the last time, then check current time
+    -- if self.elapsed >= 2 then
+        -- -- make sure you call tonumber() if you compare to a number
+        -- local minutes = tonumber(date("%M"))
+        -- if minutes == 0 then
+            -- if not firedLast then
+                -- -- we didn't play it during this minute #0 yet, so do it now
+                -- PlaySoundFile("Sound\\Spells\\Flare.wav")
+                -- -- make sure it doesn't play until after minute has been ~= 0
+                -- firedLast = true
+            -- end
+        -- else
+            -- -- reset the var so that the sound will be played again the next time minute == 0
+            -- firedLast = false
+        -- end
+        -- -- reset the internal time counter to zero so it starts counting the 2 second throttle again
+        -- self.elapsed = 0
+    -- end
+-- end)
+
+
+-- function setAlarm(timeAsInt) -- 1 is 30m, 2 is 2h, 3 is 8h, 4 is 24h
+	-- if timeAsInt == 1 then
+		-- print("Watch it!")
+	-- elseif timeAsInt == 2 then
+		-- local hours, minutes = GetGameTime()
+		-- if ((minutes + 25) > 59) then
+			-- if ((hours + 1) > 23) then
+				-- hours = 0
+			-- else
+				-- hours = hours + 1
+			-- end
+		-- else
+			-- minutes = minutes + 25
+		-- end
+		
+		
+	-- elseif timeAsInt == 3 then
+		-- local hours, minutes = GetGameTime()
+	-- elseif timeAsInt == 4 then
+		-- local hours, minutes = GetGameTime()
+	-- end
+-- end
+
+
+
+
+
+
 
 local FILTER_SPACING = 28.5
 
@@ -129,7 +183,7 @@ do
     btn:RegisterForClicks('LeftButtonUp', 'RightButtonUp')
     btn:SetScript('OnClick', function()
         if arg1 == 'RightButton' then
-            set_filter(get_current_search().filter_string)
+            filter = current_search.filter_string
         end
         execute()
     end)
@@ -164,7 +218,7 @@ do
 		return queries and join(map(copy(queries), function(query) return query.prettified end), ';') or color.red(str)
 	end
 	editbox.complete = completion.complete_filter
-    editbox.escape = function() this:SetText(get_current_search().filter_string or '') end
+    editbox.focus_loss = function() this:SetText(current_search.filter_string or '') end
 	editbox:SetHeight(25)
 	editbox.char = function()
 		this:complete()
@@ -188,7 +242,7 @@ do
     btn:SetWidth(243)
     btn:SetHeight(22)
     btn:SetText('Search Results')
-    btn:SetScript('OnClick', function() set_subtab(RESULTS) end)
+    btn:SetScript('OnClick', function() subtab = RESULTS end)
     search_results_button = btn
 end
 do
@@ -197,7 +251,7 @@ do
     btn:SetWidth(243)
     btn:SetHeight(22)
     btn:SetText('Saved Searches')
-    btn:SetScript('OnClick', function() set_subtab(SAVED) end)
+    btn:SetScript('OnClick', function() subtab = SAVED end)
     saved_searches_button = btn
 end
 do
@@ -206,7 +260,7 @@ do
     btn:SetWidth(243)
     btn:SetHeight(22)
     btn:SetText('Filter Builder')
-    btn:SetScript('OnClick', function() set_subtab(FILTER) end)
+    btn:SetScript('OnClick', function() subtab = FILTER end)
     new_filter_button = btn
 end
 do
@@ -235,8 +289,8 @@ do
     btn:SetPoint('TOPLEFT', buyout_button, 'TOPRIGHT', 5, 0)
     btn:SetText('Clear')
     btn:SetScript('OnClick', function()
-        while tremove(get_current_search().records) do end
-        get_current_search().table:SetDatabase()
+        while tremove(current_search.records) do end
+        current_search.table:SetDatabase()
     end)
 end
 do
@@ -435,14 +489,14 @@ do
 	input:SetPoint('CENTER', filter_dropdown, 'CENTER', 0, 0)
 	input:SetWidth(150)
 	input:SetScript('OnTabPressed', function() filter_parameter_input:SetFocus() end)
-	input.complete = completion.complete(function() return T.temp-T.list('and', 'or', 'not', unpack(keys(filter_util.filters))) end)
+	input.complete = completion.complete(function() return temp-A('and', 'or', 'not', unpack(keys(filter_util.filters))) end)
 	input.char = function() this:complete() end
 	input.change = function()
 		local text = this:GetText()
 		if filter_util.filters[text] and filter_util.filters[text].input_type ~= '' then
 			local _, _, suggestions = filter_util.parse_filter_string(text .. '/')
 			filter_parameter_input:SetNumeric(filter_util.filters[text].input_type == 'number')
-			filter_parameter_input.complete = completion.complete(function() return suggestions or T.empty end)
+			filter_parameter_input.complete = completion.complete(function() return suggestions or empty end)
 			filter_parameter_input:Show()
 		else
 			filter_parameter_input:Hide()
@@ -522,23 +576,19 @@ for _ = 1, 5 do
 
     local table = auction_listing.new(frame.results, 16, auction_listing.search_columns)
     table:SetHandler('OnClick', function(row, button)
-	    if IsAltKeyDown() then
-		    if get_current_search().table:GetSelection().record == row.record then
-			    if button == 'LeftButton' then
-	                buyout_button:Click()
-	            elseif button == 'RightButton' then
-	                bid_button:Click()
-			    end
-		    end
-	    elseif button == 'RightButton' then
-	        set_tab(1)
-		    set_filter(strlower(info.item(this.record.item_id).name) .. '/exact')
-		    execute(nil, false)
-	    end
+        if IsAltKeyDown() and current_search.table:GetSelection().record == row.record then
+            if button == 'LeftButton' then
+                buyout_button:Click()
+            elseif button == 'RightButton' then
+                bid_button:Click()
+            end
+		elseif IsShiftKeyDown() and current_search.table:GetSelection().record == row.record then
+			if button == 'LeftButton' then
+				setAlarm(current_search.table:GetSelection().record.duration)
+			end
+        end
     end)
     table:SetHandler('OnSelectionChanged', function(rt, datum)
-	    bid_button:Disable()
-        buyout_button:Disable()
         if not datum then return end
         find_auction(datum.record)
     end)
@@ -552,7 +602,7 @@ favorite_searches_listing:SetColInfo{{name='Auto Buy', width=.07, align='CENTER'
 recent_searches_listing = listing.new(frame.saved.recent)
 recent_searches_listing:SetColInfo{{name='Recent Searches', width=1}}
 
-for listing in T.temp-T.set(favorite_searches_listing, recent_searches_listing) do
+for listing in temp-S(favorite_searches_listing, recent_searches_listing) do
 	for k, v in handlers do
 		listing:SetHandler(k, v)
 	end
