@@ -5,7 +5,6 @@ include 'aux'
 
 local info = require 'aux.util.info'
 local history = require 'aux.core.history'
-local money = require 'aux.util.money'
 
 local PAGE_SIZE = 50
 
@@ -28,14 +27,14 @@ do
 
 	function M.abort(scan_id)
 		local aborted = T
-		for type, state in scan_states do
+		for type, state in pairs(scan_states) do
 			if not scan_id or state.id == scan_id then
 				kill_thread(state.id)
 				scan_states[type] = nil
 				tinsert(aborted, state)
 			end
 		end
-		for _, state in aborted do
+		for _, state in pairs(aborted) do
 			do (state.params.on_abort or nop)() end
 		end
 	end
@@ -51,7 +50,7 @@ do
 	end
 
 	function get_state()
-		for _, state in scan_states do
+		for _, state in pairs(scan_states) do
 			if state.id == thread_id then
 				return state
 			end
@@ -60,7 +59,11 @@ do
 end
 
 function get_query()
-	return state.params.queries[state.query_index]
+	if state.params.type == 'list' then
+		return state.params.queries[state.query_index]
+	else
+		return empty
+	end
 end
 
 function total_pages(total_auctions)
@@ -74,6 +77,10 @@ function last_page(total_auctions)
 end
 
 function scan()
+	if state.params.type ~= 'list' then
+		return scan_page()
+	end
+
 	state.query_index = state.query_index and state.query_index + 1 or 1
 	if query and not state.stopped then
 		do (state.params.on_start_query or nop)(state.query_index) end
@@ -92,41 +99,35 @@ end
 
 do
 	local function submit()
-		if state.params.type == 'bidder' then
-			GetBidderAuctionItems(state.page)
-		elseif state.params.type == 'owner' then
-			GetOwnerAuctionItems(state.page)
-		else
-			state.last_list_query = GetTime()
-			local blizzard_query = query.blizzard_query or T
-			QueryAuctionItems(
-				blizzard_query.name,
-				blizzard_query.min_level,
-				blizzard_query.max_level,
-				blizzard_query.slot,
-				blizzard_query.class,
-				blizzard_query.subclass,
-				state.page,
-				blizzard_query.usable,
-				blizzard_query.quality
-			)
-		end
+		state.last_list_query = GetTime()
+		local blizzard_query = query.blizzard_query or T
+		QueryAuctionItems(
+			blizzard_query.name,
+			blizzard_query.min_level,
+			blizzard_query.max_level,
+			blizzard_query.slot,
+			blizzard_query.class,
+			blizzard_query.subclass,
+			state.page,
+			blizzard_query.usable,
+			blizzard_query.quality
+		)
 		return wait_for_results()
 	end
 	function submit_query()
 		if state.stopped then return end
-		if state.params.type ~= 'list' then
-			return submit()
-		else
-			return when(CanSendAuctionQuery, submit)
-		end
+		return when(CanSendAuctionQuery, submit)
 	end
 end
 
 function scan_page(i)
 	i = i or 1
 
-	if i > PAGE_SIZE then
+	if not state.page then
+		_,  state.total_auctions = GetNumAuctionItems(state.params.type)
+	end
+
+	if state.params.type == 'list' and i > PAGE_SIZE then
 		do (state.params.on_page_scanned or nop)() end
 		if query.blizzard_query and state.page < last_page(state.total_auctions) then
 			state.page = state.page + 1
@@ -134,6 +135,8 @@ function scan_page(i)
 		else
 			return scan()
 		end
+	elseif state.params.type ~= 'list' and i > state.total_auctions then
+		return complete()
 	end
 
 	local auction_info = info.auction(i, state.params.type)
@@ -145,27 +148,12 @@ function scan_page(i)
 
 		history.process_auction(auction_info)
 
-		if (state.params.auto_buy_validator or nop)(auction_info) then
-			local send_signal, signal_received = signal()
-			when(signal_received, scan_page, i)
-			DEFAULT_CHAT_FRAME:AddMessage("Item below bought for: " .. money.to_string2(auction_info.buyout_price))
-			return place_bid(auction_info.query_type, auction_info.index, auction_info.buyout_price, send_signal)
-		elseif not query.validator or query.validator(auction_info) then
+		if not query.validator or query.validator(auction_info) then
 			do (state.params.on_auction or nop)(auction_info) end
 		end
 	end
 
 	return scan_page(i + 1)
-end
-
-function wait_for_results()
-    if state.params.type == 'bidder' then
-        return when(function() return bids_loaded end, accept_results)
-    elseif state.params.type == 'owner' then
-        return wait_for_owner_results()
-    elseif state.params.type == 'list' then
-        return wait_for_list_results()
-    end
 end
 
 function accept_results()
@@ -180,17 +168,7 @@ function accept_results()
 	return scan_page()
 end
 
-function wait_for_owner_results()
-    if state.page == current_owner_page then
-	    return accept_results()
-    else
-	    local updated
-        on_next_event('AUCTION_OWNED_LIST_UPDATE', function() updated = true end)
-	    return when(function() return updated end, accept_results)
-    end
-end
-
-function wait_for_list_results()
+function wait_for_results()
     local updated, last_update
     local listener_id = event_listener('AUCTION_ITEM_LIST_UPDATE', function()
         last_update = GetTime()

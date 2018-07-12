@@ -20,18 +20,12 @@ _G.aux = {
 	account = {},
 }
 
-function M.print(...)
+M.print = vararg-function(arg)
 	DEFAULT_CHAT_FRAME:AddMessage(LIGHTYELLOW_FONT_COLOR_CODE .. '<aux> ' .. join(map(arg, tostring), ' '))
 end
 
-local bids_loaded
-function M.get_bids_loaded() return bids_loaded end
-
-local current_owner_page
-function M.get_current_owner_page() return current_owner_page end
-
 local event_frame = CreateFrame'Frame'
-for event in temp-S('ADDON_LOADED', 'VARIABLES_LOADED', 'PLAYER_LOGIN', 'AUCTION_HOUSE_SHOW', 'AUCTION_HOUSE_CLOSED', 'AUCTION_BIDDER_LIST_UPDATE', 'AUCTION_OWNED_LIST_UPDATE') do
+for event in pairs(temp-S('ADDON_LOADED', 'VARIABLES_LOADED', 'PLAYER_LOGIN', 'AUCTION_HOUSE_SHOW', 'AUCTION_HOUSE_CLOSED')) do
 	event_frame:RegisterEvent(event)
 end
 
@@ -53,9 +47,9 @@ do
 				Blizzard_TradeSkillUI()
 			end
 		elseif event == 'VARIABLES_LOADED' then
-			for _, f in handlers do f() end
+			for _, f in pairs(handlers) do f() end
 		elseif event == 'PLAYER_LOGIN' then
-			for _, f in handlers2 do f() end
+			for _, f in pairs(handlers2) do f() end
 			print('loaded - /aux')
 		else
 			_M[event]()
@@ -85,12 +79,14 @@ do
 			cache.faction = aux.faction[key]
 		end
 	end
-	for scope in temp-S('character', 'faction', 'realm', 'account') do
+	for scope in pairs(temp-S('character', 'faction', 'realm', 'account')) do
 		local scope = scope
 		M[scope .. '_data'] = function(key, init)
-			if not cache[scope] then error('Cache not ready', 2) end
+			if not cache[scope]
+				then error('Cache not ready', 2)
+			end
 			cache[scope][key] = cache[scope][key] or {}
-			for k, v in init or empty do
+			for k, v in pairs(init or empty) do
 				if cache[scope][key][k] == nil then
 					cache[scope][key][k] = v
 				end
@@ -122,8 +118,7 @@ do
 	end
 end
 
-function SetItemRef(...)
-	temp(arg)
+SetItemRef = vararg-function(arg)
 	if arg[3] ~= 'RightButton' or not index(active_tab, 'CLICK_LINK') or not strfind(arg[1], '^item:%d+') then
 		return orig.SetItemRef(unpack(arg))
 	end
@@ -133,27 +128,24 @@ function SetItemRef(...)
 	end
 end
 
-function UseContainerItem(...)
-	temp(arg)
-	if modified or not active_tab then
-		return orig.UseContainerItem(unpack(arg))
+HandleModifiedItemClick = vararg-function(arg)
+	if not IsAltKeyDown() or not active_tab then
+		return orig.HandleModifiedItemClick(unpack(arg))
 	end
-	local item_info = info.container_item(arg[1], arg[2])
-	if item_info and active_tab.USE_ITEM then
-		active_tab.USE_ITEM(item_info)
+	if active_tab.USE_ITEM then
+		active_tab.USE_ITEM(info.parse_link(arg[1]))
 	end
 end
 
 M.orig = setmetatable({[_G]=T}, {__index=function(self, key) return self[_G][key] end})
-function M.hook(...)
-	temp(arg)
+M.hook = vararg-function(arg)
 	local name, object, handler
 	if arg.n == 3 then
 		name, object, handler = unpack(arg)
 	else
 		object, name, handler = _G, unpack(arg)
 	end
-	handler = handler or getfenv(2)[name]
+	handler = handler or getfenv(3)[name]
 	orig[object] = orig[object] or T
 	assert(not orig[object][name], '"' .. name .. '" is already hooked into.')
 	orig[object][name], object[name] = object[name], handler
@@ -218,8 +210,6 @@ function AUCTION_HOUSE_SHOW()
 end
 
 function AUCTION_HOUSE_CLOSED()
-	bids_loaded = false
-	current_owner_page = nil
 	post.stop()
 	stack.stop()
 	scan.abort()
@@ -227,31 +217,17 @@ function AUCTION_HOUSE_CLOSED()
 	AuxFrame:Hide()
 end
 
-function AUCTION_BIDDER_LIST_UPDATE()
-	bids_loaded = true
-end
-
-do
-	local last_owner_page_requested
-	function GetOwnerAuctionItems(index)
-		local page = index
-		last_owner_page_requested = index
-		return orig.GetOwnerAuctionItems(index)
-	end
-	function AUCTION_OWNED_LIST_UPDATE()
-		current_owner_page = last_owner_page_requested or 0
-	end
-end
-
 function Blizzard_AuctionUI()
 	AuctionFrame:UnregisterEvent('AUCTION_HOUSE_SHOW')
 	AuctionFrame:SetScript('OnHide', nil)
-	hook('ShowUIPanel', function(...)
-		temp(arg)
-		if arg[1] == AuctionFrame then return AuctionFrame:Show() end
+	hook('ShowUIPanel', vararg-function(arg)
+		if arg[1] == AuctionFrame then
+			return AuctionFrame:Show()
+		end
 		return orig.ShowUIPanel(unpack(arg))
 	end)
-	hook 'GetOwnerAuctionItems' 'SetItemRef' 'UseContainerItem' 'AuctionFrameAuctions_OnEvent'
+	hook 'SetItemRef' 'AuctionFrameAuctions_OnEvent'
+	hooksecurefunc('HandleModifiedItemClick', HandleModifiedItemClick)
 end
 
 do
@@ -273,12 +249,11 @@ do
 		end)
 	end
 	function Blizzard_CraftUI()
-		hook('CraftFrame_SetSelection', function(...)
+		hook('CraftFrame_SetSelection', vararg-function(arg)
 			local ret = temp-A(orig.CraftFrame_SetSelection(unpack(arg)))
 			local id = GetCraftSelectionIndex()
-			local reagent_count = GetCraftNumReagents(id)
 			local total_cost = 0
-			for i = 1, reagent_count do
+			for i = 1, GetCraftNumReagents(id) do
 				local link = GetCraftReagentItemLink(id, i)
 				if not link then
 					total_cost = nil
@@ -303,12 +278,11 @@ do
 		end
 	end
 	function Blizzard_TradeSkillUI()
-		hook('TradeSkillFrame_SetSelection', function(...)
+		hook('TradeSkillFrame_SetSelection', vararg-function(arg)
 			local ret = temp-A(orig.TradeSkillFrame_SetSelection(unpack(arg)))
 			local id = GetTradeSkillSelectionIndex()
-			local reagent_count = GetTradeSkillNumReagents(id)
 			local total_cost = 0
-			for i = 1, reagent_count do
+			for i = 1, GetTradeSkillNumReagents(id) do
 				local link = GetTradeSkillReagentItemLink(id, i)
 				if not link then
 					total_cost = nil
@@ -334,8 +308,7 @@ do
 	end
 end
 
-function AuctionFrameAuctions_OnEvent(...)
-	temp(arg)
+AuctionFrameAuctions_OnEvent = vararg-function(arg)
     if AuctionFrameAuctions:IsVisible() then
 	    return orig.AuctionFrameAuctions_OnEvent(unpack(arg))
     end

@@ -1,136 +1,125 @@
-local m, public, private = aux.tab(4, 'Bids', 'bids_tab')
+module 'aux.tabs.bids'
 
-private.auction_records = nil
+include 'T'
+include 'aux'
 
-function m.LOAD()
-	m.create_frames()
+local info = require 'aux.util.info'
+local scan_util = require 'aux.util.scan'
+local scan = require 'aux.core.scan'
+
+TAB 'Bids'
+
+auction_records = {}
+
+function LOAD()
+	event_listener('AUCTION_BIDDER_LIST_UPDATE', scan_bids)
 end
 
-function m.OPEN()
-    m.frame:Show()
-    m.scan_bids()
+function OPEN()
+    frame:Show()
+    GetBidderAuctionItems()
 end
 
-function m.CLOSE()
-    m.frame:Hide()
+function CLOSE()
+    frame:Hide()
 end
 
-function private.update_listing()
-    if not m:ACTIVE() then
-        return
-    end
-
-    m.listing:SetDatabase(m.auction_records)
+function update_listing()
+    listing:SetDatabase(auction_records)
 end
 
-function public.scan_bids()
+function M.scan_bids()
 
-    m.status_bar:update_status(0,0)
-    m.status_bar:set_text('Scanning auctions...')
+    status_bar:update_status(0, 0)
+    status_bar:set_text('Scanning auctions...')
 
-    m.auction_records = {}
-    m.update_listing()
-    aux.scan.start{
+    wipe(auction_records)
+    update_listing()
+    scan.start{
         type = 'bidder',
-        queries = {{ blizzard_query = {} }},
-        on_page_loaded = function(page, total_pages)
-            m.status_bar:update_status(100 * (page - 1) / total_pages, 0)
-            m.status_bar:set_text(format('Scanning (Page %d / %d)', page, total_pages))
-        end,
         on_auction = function(auction_record)
-            tinsert(m.auction_records, auction_record)
+            tinsert(auction_records, auction_record)
         end,
         on_complete = function()
-            m.status_bar:update_status(100, 100)
-            m.status_bar:set_text('Scan complete')
-            m.update_listing()
+            status_bar:update_status(1, 1)
+            status_bar:set_text('Scan complete')
+            update_listing()
         end,
         on_abort = function()
-            m.status_bar:update_status(100, 100)
-            m.status_bar:set_text('Scan aborted')
+            status_bar:update_status(1, 1)
+            status_bar:set_text('Scan aborted')
         end,
     }
 end
 
-function private.test(record)
-    return function(index)
-        local auction_info = aux.info.auction(index, 'bidder')
-        return auction_info and auction_info.search_signature == record.search_signature
-    end
-end
-
 do
     local scan_id = 0
-    local IDLE, SEARCHING, FOUND = {}, {}, {}
+    local IDLE, SEARCHING, FOUND = 1, 2, 3
     local state = IDLE
     local found_index
 
-    function private.find_auction(record)
-        if not m.listing:ContainsRecord(record) then
-            return
-        end
+    function find_auction(record)
+        if not listing:ContainsRecord(record) then return end
 
-        aux.scan.abort(scan_id)
+        scan.abort(scan_id)
         state = SEARCHING
-        scan_id = aux.scan_util.find(
+        scan_id = scan_util.find(
             record,
-            m.status_bar,
+            status_bar,
+            function() state = IDLE end,
             function()
                 state = IDLE
-            end,
-            function()
-                state = IDLE
-                m.listing:RemoveAuctionRecord(record)
+                listing:RemoveAuctionRecord(record)
             end,
             function(index)
                 state = FOUND
                 found_index = index
 
                 if not record.high_bidder then
-                    m.bid_button:SetScript('OnClick', function()
-                        if m.test(record)(index) and m.listing:ContainsRecord(record) then
-                            aux.place_bid('bidder', index, record.bid_price, record.bid_price < record.buyout_price and function()
-                                aux.info.bid_update(record)
-                                m.listing:SetDatabase()
-                            end or aux._(m.listing.RemoveAuctionRecord, m.listing, record))
+                    bid_button:SetScript('OnClick', function()
+                        if scan_util.test(record, index) and listing:ContainsRecord(record) then
+                            place_bid('bidder', index, record.bid_price, record.bid_price < record.buyout_price and function()
+                                info.bid_update(record)
+                                listing:SetDatabase()
+                            end or function() listing:RemoveAuctionRecord(record) end)
                         end
                     end)
-                    m.bid_button:Enable()
+                    bid_button:Enable()
+                else
+	                bid_button:Disable()
                 end
 
                 if record.buyout_price > 0 then
-                    m.buyout_button:SetScript('OnClick', function()
-                        if m.test(record)(index) and m.listing:ContainsRecord(record) then
-                            aux.place_bid('bidder', index, record.buyout_price, aux._(m.listing.RemoveAuctionRecord, m.listing, record))
+                    buyout_button:SetScript('OnClick', function()
+                        if scan_util.test(record, index) and listing:ContainsRecord(record) then
+                            place_bid('bidder', index, record.buyout_price, function() listing:RemoveAuctionRecord(record) end)
                         end
                     end)
-                    m.buyout_button:Enable()
+                    buyout_button:Enable()
+                else
+	                buyout_button:Disable()
                 end
             end
         )
     end
 
-    function private.on_update()
+    function on_update()
         if state == IDLE or state == SEARCHING then
-            m.buyout_button:Disable()
-            m.bid_button:Disable()
+            buyout_button:Disable()
+            bid_button:Disable()
         end
 
-        if state == SEARCHING then
-            return
-        end
+        if state == SEARCHING then return end
 
-        local selection = m.listing:GetSelection()
+        local selection = listing:GetSelection()
         if not selection then
             state = IDLE
         elseif selection and state == IDLE then
-            m.find_auction(selection.record)
-        elseif state == FOUND and not m.test(selection.record)(found_index) then
-            m.buyout_button:Disable()
-            m.bid_button:Disable()
-            if not aux.bid_in_progress() then
-                state = IDLE
-            end
+            find_auction(selection.record)
+        elseif state == FOUND and not scan_util.test(selection.record, found_index) then
+            buyout_button:Disable()
+            bid_button:Disable()
+            if not bid_in_progress then state = IDLE end
         end
     end
 end

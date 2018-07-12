@@ -7,63 +7,6 @@ local gui = require 'aux.gui'
 local listing = require 'aux.gui.listing'
 local auction_listing = require 'aux.gui.auction_listing'
 
-
-
--- -- Make a local variable that tells us whether the sound was played previously during this (minute == 0) occurrence
--- local firedLast = false
--- CreateFrame("Frame"):SetScript("OnUpdate",function(self,elapsed)
-    -- -- increment a member on the frame, initializing it to zero if it has no value
-    -- self.elapsed = (self.elapsed or 0)+elapsed
-    -- -- if 2 seconds passed since the last time, then check current time
-    -- if self.elapsed >= 2 then
-        -- -- make sure you call tonumber() if you compare to a number
-        -- local minutes = tonumber(date("%M"))
-        -- if minutes == 0 then
-            -- if not firedLast then
-                -- -- we didn't play it during this minute #0 yet, so do it now
-                -- PlaySoundFile("Sound\\Spells\\Flare.wav")
-                -- -- make sure it doesn't play until after minute has been ~= 0
-                -- firedLast = true
-            -- end
-        -- else
-            -- -- reset the var so that the sound will be played again the next time minute == 0
-            -- firedLast = false
-        -- end
-        -- -- reset the internal time counter to zero so it starts counting the 2 second throttle again
-        -- self.elapsed = 0
-    -- end
--- end)
-
-
--- function setAlarm(timeAsInt) -- 1 is 30m, 2 is 2h, 3 is 8h, 4 is 24h
-	-- if timeAsInt == 1 then
-		-- print("Watch it!")
-	-- elseif timeAsInt == 2 then
-		-- local hours, minutes = GetGameTime()
-		-- if ((minutes + 25) > 59) then
-			-- if ((hours + 1) > 23) then
-				-- hours = 0
-			-- else
-				-- hours = hours + 1
-			-- end
-		-- else
-			-- minutes = minutes + 25
-		-- end
-		
-		
-	-- elseif timeAsInt == 3 then
-		-- local hours, minutes = GetGameTime()
-	-- elseif timeAsInt == 4 then
-		-- local hours, minutes = GetGameTime()
-	-- end
--- end
-
-
-
-
-
-
-
 local FILTER_SPACING = 28.5
 
 frame = CreateFrame('Frame', nil, AuxFrame)
@@ -81,12 +24,12 @@ frame.saved = CreateFrame('Frame', nil, frame)
 frame.saved:SetAllPoints(AuxFrame.content)
 
 frame.saved.favorite = gui.panel(frame.saved)
-frame.saved.favorite:SetWidth(393)
+frame.saved.favorite:SetWidth(378.5)
 frame.saved.favorite:SetPoint('TOPLEFT', 0, 0)
 frame.saved.favorite:SetPoint('BOTTOMLEFT', 0, 0)
 
 frame.saved.recent = gui.panel(frame.saved)
-frame.saved.recent:SetWidth(364.5)
+frame.saved.recent:SetPoint('LEFT', frame.saved.favorite, 'RIGHT', 2.5, 0)
 frame.saved.recent:SetPoint('TOPRIGHT', 0, 0)
 frame.saved.recent:SetPoint('BOTTOMRIGHT', 0, 0)
 do
@@ -287,11 +230,19 @@ end
 do
     local btn = gui.button(frame.results)
     btn:SetPoint('TOPLEFT', buyout_button, 'TOPRIGHT', 5, 0)
-    btn:SetText('Clear')
+    btn:SetText('Remove')
     btn:SetScript('OnClick', function()
-        while tremove(current_search.records) do end
-        current_search.table:SetDatabase()
+	    if not bid_in_progress then
+	        current_search.table:RemoveAuctionRecord((current_search.table:GetSelection() or empty).record)
+	    end
     end)
+	btn:SetScript('OnUpdate', function()
+		if current_search.table:GetSelection() then
+			btn:Enable()
+		else
+			btn:Disable()
+		end
+	end)
 end
 do
     local btn = gui.button(frame.saved)
@@ -582,10 +533,6 @@ for _ = 1, 5 do
             elseif button == 'RightButton' then
                 bid_button:Click()
             end
-		elseif IsShiftKeyDown() and current_search.table:GetSelection().record == row.record then
-			if button == 'LeftButton' then
-				setAlarm(current_search.table:GetSelection().record.duration)
-			end
         end
     end)
     table:SetHandler('OnSelectionChanged', function(rt, datum)
@@ -597,13 +544,13 @@ for _ = 1, 5 do
 end
 
 favorite_searches_listing = listing.new(frame.saved.favorite)
-favorite_searches_listing:SetColInfo{{name='Auto Buy', width=.07, align='CENTER'}, {name='Favorite Searches', width=.93}}
+favorite_searches_listing:SetColInfo{{name='Favorite Searches', width=1}}
 
 recent_searches_listing = listing.new(frame.saved.recent)
 recent_searches_listing:SetColInfo{{name='Recent Searches', width=1}}
 
-for listing in temp-S(favorite_searches_listing, recent_searches_listing) do
-	for k, v in handlers do
+for listing in pairs(temp-S(favorite_searches_listing, recent_searches_listing)) do
+	for k, v in pairs(handlers) do
 		listing:SetHandler(k, v)
 	end
 end

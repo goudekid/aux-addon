@@ -1,30 +1,31 @@
-local m, public, private = aux.module'sort'
+module 'aux.util.sort'
 
-public.LT = {}
-public.EQ = {}
-public.GT = {}
+include 'T'
+include 'aux'
 
-function public.compare(a, b, desc)
+M.EQ = 0
+M.LT = 1
+M.GT = 2
+
+function M.compare(a, b, desc)
     if a < b then
-        return desc and m.GT or m.LT
+        return desc and GT or LT
     elseif a > b then
-        return desc and m.LT or m.GT
+        return desc and LT or GT
     else
-        return m.EQ
+        return EQ
     end
 end
 
-function public.multi_lt(xs, ys)
-    local i = 1
-    while true do
-        if xs[i] and ys[i] and xs[i] ~= ys[i] then
-            return xs[i] < ys[i]
-        elseif not xs[i] and ys[i] then
+M.multi_lt = vararg-function(arg)
+	for i = 1, arg.n, 2 do
+        if arg[i] and arg[i + 1] and arg[i] ~= arg[i + 1] then
+            return arg[i] < arg[i + 1]
+        elseif not arg[i] and arg[i + 1] then
             return true
-        elseif not ys[i] then
+        elseif not arg[i + 1] then
             return false
         end
-
-        i = i + 1
-    end
+	end
+	return false
 end
